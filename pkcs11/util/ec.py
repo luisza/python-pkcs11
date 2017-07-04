@@ -1,16 +1,16 @@
 """
 Key handling utilities for EC keys (ANSI X.62/RFC3279).
-
-These utilities depend on the :mod:`pyasn1` and :mod:`pyasn1_modules`.
 """
+
+from asn1crypto.keys import (
+    ECDomainParameters,
+    ECPrivateKey,
+    NamedCurve,
+    PublicKeyInfo,
+)
 
 from ..constants import Attribute, ObjectClass
 from ..mechanisms import KeyType
-
-from pyasn1.type.univ import BitString
-from pyasn1.codec.der import encoder, decoder
-from pyasn1_modules.rfc3279 import EcpkParameters, id_ecPublicKey
-from pyasn1_modules import rfc3280
 
 
 def encode_named_curve_parameters(oid):
@@ -20,14 +20,13 @@ def encode_named_curve_parameters(oid):
     Curve names are given by object identifier and can be found in
     :mod:`pyasn1_modules.rfc3279`.
 
-    :param oid:
-        Object identifier for a named curve
-    :type oid: pyasn1.type.univ.ObjectIdentifier, str or tuple
+    :param str curve: named curve
     :rtype: bytes
     """
-    ecParams = EcpkParameters()
-    ecParams['namedCurve'] = oid
-    return encoder.encode(ecParams)
+    return ECDomainParameters(
+        name='named',
+        value=NamedCurve.unmap(oid),
+    ).dump()
 
 
 def decode_ec_public_key(der):
@@ -38,16 +37,35 @@ def decode_ec_public_key(der):
     :param bytes der: DER-encoded key
     :rtype: dict(Attribute,*)
     """
-    asn1, _ = decoder.decode(der, asn1Spec=rfc3280.SubjectPublicKeyInfo())
+    asn1 = PublicKeyInfo.load(der)
 
-    assert asn1['algorithm']['algorithm'] == id_ecPublicKey, \
+    assert asn1.algorithm == 'ec', \
         "Wrong algorithm, not an EC key!"
 
     return {
         Attribute.KEY_TYPE: KeyType.EC,
         Attribute.CLASS: ObjectClass.PUBLIC_KEY,
-        Attribute.EC_PARAMS: asn1['algorithm']['parameters'],
-        Attribute.EC_POINT: asn1['subjectPublicKey'].asOctets(),
+        Attribute.EC_PARAMS: asn1['algorithm']['parameters'].dump(),
+        Attribute.EC_POINT: asn1['public_key'],
+    }
+
+
+def decode_ec_private_key(der):
+    """
+    Decode a DER-encoded EC private key as stored by OpenSSL into a dictionary
+    of attributes able to be passed to :meth:`pkcs11.Session.create_object`.
+
+    :param bytes der: DER-encoded key
+    :rtype: dict(Attribute,*)
+    """
+
+    asn1 = ECPrivateKey.load(der)
+
+    return {
+        Attribute.KEY_TYPE: KeyType.EC,
+        Attribute.CLASS: ObjectClass.PRIVATE_KEY,
+        Attribute.EC_PARAMS: asn1['parameters'].dump(),
+        Attribute.VALUE: asn1['private_key'],
     }
 
 
@@ -59,13 +77,10 @@ def encode_ec_public_key(key):
     :rtype: bytes
     """
 
-    asn1 = rfc3280.SubjectPublicKeyInfo()
-
-    asn1['algorithm'] = algo = rfc3280.AlgorithmIdentifier()
-    algo['algorithm'] = id_ecPublicKey
-    algo['parameters'] = key[Attribute.EC_PARAMS]
-
-    asn1['subjectPublicKey'] = \
-        BitString.fromOctetString(key[Attribute.EC_POINT])
-
-    return encoder.encode(asn1)
+    return PublicKeyInfo({
+        'algorithm': {
+            'algorithm': 'ec',
+            'parameters': ECDomainParameters.load(key[Attribute.EC_PARAMS]),
+        },
+        'public_key': key[Attribute.EC_POINT],
+    }).dump()
