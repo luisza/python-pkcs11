@@ -14,7 +14,10 @@ if __name__ == '__main__':
             Extension('pkcs11._loader',
                     sources=[
                         'pkcs11/_loader.pyx',
+                        'extern/dlfcn.c'
                     ],
+                    include_dirs=['extern/'],
+                    libraries=['Psapi']
             ),
             Extension('pkcs11._pkcs11',
                     sources=[
@@ -30,6 +33,8 @@ if __name__ == '__main__':
                         ('CK_DECLARE_FUNCTION_POINTER(returnType, name)', 'returnType (* name)'),
                         ('CK_CALLBACK_FUNCTION(returnType, name)', 'returnType (* name)'),
                     ],
+
+                    libraries=['Psapi']
             ),
         ]
 
